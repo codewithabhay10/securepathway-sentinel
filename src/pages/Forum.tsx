@@ -1,11 +1,12 @@
 
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import SafetyForum from '@/components/SafetyForum';
 import SOSButton from '@/components/SOSButton';
 import CreatePostForm from '@/components/CreatePostForm';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, FileVideo2 } from 'lucide-react';
 import AuthModal from '@/components/AuthModal';
 import { useAuth } from '@/components/AuthProvider';
 
@@ -38,14 +39,27 @@ const Forum = () => {
             <div className="flex justify-between items-center">
               <h1 className="text-2xl font-semibold">Community Safety Forum</h1>
               
-              <Button 
-                onClick={handleCreatePostClick} 
-                size="sm"
-                className="flex items-center space-x-1"
-              >
-                <Plus size={16} />
-                <span>Share Information</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Link to="/deepfake">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="flex items-center space-x-1"
+                  >
+                    <FileVideo2 size={16} />
+                    <span>Deepfake Detection</span>
+                  </Button>
+                </Link>
+                
+                <Button 
+                  onClick={handleCreatePostClick} 
+                  size="sm"
+                  className="flex items-center space-x-1"
+                >
+                  <Plus size={16} />
+                  <span>Share Information</span>
+                </Button>
+              </div>
             </div>
             <p className="text-muted-foreground">
               Share and discover safety information from women in your community.

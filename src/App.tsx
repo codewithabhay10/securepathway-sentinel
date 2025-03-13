@@ -10,6 +10,7 @@ import MapView from "./pages/MapView";
 import Forum from "./pages/Forum";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import DeepfakeDetection from "./pages/DeepfakeDetection";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/map" element={<MapView />} />
             <Route path="/forum" element={<Forum />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/deepfake" element={<DeepfakeDetection />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
