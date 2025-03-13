@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import SafetyForum from '@/components/SafetyForum';
 import SOSButton from '@/components/SOSButton';
@@ -13,7 +13,15 @@ import { useAuth } from '@/components/AuthProvider';
 const Forum = () => {
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, requireAuth } = useAuth();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    // Redirect to home if not authenticated
+    if (!requireAuth()) {
+      return;
+    }
+  }, [requireAuth]);
   
   const handleCreatePostClick = () => {
     if (isAuthenticated) {
@@ -28,6 +36,11 @@ const Forum = () => {
     // In a real app, we would update the posts state here
     // For now, we'll rely on the SafetyForum component to handle this
   };
+  
+  // If not authenticated, this component won't render content
+  if (!isAuthenticated) {
+    return null;
+  }
   
   return (
     <div className="min-h-screen bg-background">

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Shield, User, Lock, UserPlus, LogIn } from 'lucide-react';
+import { Shield, User, Lock, UserPlus, LogIn, Mail, UserCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 type AuthMode = 'login' | 'register';
@@ -11,14 +11,16 @@ type AuthMode = 'login' | 'register';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialMode?: AuthMode;
   onSuccess?: () => void;
 }
 
-const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
-  const [mode, setMode] = useState<AuthMode>('login');
+const AuthModal = ({ isOpen, onClose, initialMode = 'login', onSuccess }: AuthModalProps) => {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const { toast } = useToast();
@@ -30,6 +32,17 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
     setIsLoading(true);
     
     try {
+      // Validation for registration
+      if (mode === 'register') {
+        if (password !== confirmPassword) {
+          throw new Error("Passwords don't match");
+        }
+        
+        if (password.length < 6) {
+          throw new Error("Password must be at least 6 characters");
+        }
+      }
+      
       // This is a mock authentication - in a real app, this would connect to a backend
       await new Promise(resolve => setTimeout(resolve, 1000));
       
@@ -51,7 +64,7 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
     } catch (error) {
       toast({
         title: "Authentication failed",
-        description: "Please check your credentials and try again.",
+        description: error instanceof Error ? error.message : "Please check your credentials and try again.",
         variant: "destructive",
       });
     } finally {
@@ -74,12 +87,12 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
             <Shield className="w-6 h-6 text-safety-600" />
           </div>
           <h2 className="text-2xl font-semibold mb-2">
-            {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+            {mode === 'login' ? 'Welcome Back' : 'Join SecurePathway'}
           </h2>
           <p className="text-muted-foreground">
             {mode === 'login' 
               ? 'Sign in to access your safety tools and community.' 
-              : 'Join our community for safer navigation and support.'}
+              : 'Create an account to access safety maps and community support.'}
           </p>
         </div>
         
@@ -88,11 +101,11 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <div className="relative">
-                <User className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
+                <UserCircle className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
                 <Input 
                   id="name"
                   type="text"
-                  placeholder="Enter your name"
+                  placeholder="Enter your full name"
                   className="pl-10"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -105,11 +118,11 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <div className="relative">
-              <User className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
+              <Mail className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
               <Input 
                 id="email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder="name@example.com"
                 className="pl-10"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -125,7 +138,7 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
               <Input 
                 id="password"
                 type="password"
-                placeholder="Enter your password"
+                placeholder={mode === 'register' ? "Create a password" : "Enter your password"}
                 className="pl-10"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -133,6 +146,24 @@ const AuthModal = ({ isOpen, onClose, onSuccess }: AuthModalProps) => {
               />
             </div>
           </div>
+          
+          {mode === 'register' && (
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
+                <Input 
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Confirm your password"
+                  className="pl-10"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          )}
           
           <Button 
             type="submit" 

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Shield, ArrowRight, Map, MessageSquare, Bell, User, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ const Index = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const { isAuthenticated, userName } = useAuth();
+  const navigate = useNavigate();
   
   const scrollToFeatures = () => {
     featuresRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -27,6 +28,15 @@ const Index = () => {
     setShowAuthModal(true);
   };
   
+  const handleGetStartedClick = () => {
+    if (isAuthenticated) {
+      navigate('/map');
+    } else {
+      setAuthMode('register');
+      setShowAuthModal(true);
+    }
+  };
+  
   return (
     <div className="min-h-screen">
       {/* Navigation Bar */}
@@ -39,15 +49,19 @@ const Index = () => {
             </div>
             
             <nav className="hidden md:flex items-center space-x-6">
-              <Link to="/map" className="text-muted-foreground hover:text-foreground transition-colors">
-                Safety Map
-              </Link>
-              <Link to="/forum" className="text-muted-foreground hover:text-foreground transition-colors">
-                Community
-              </Link>
-              <Link to="/profile" className="text-muted-foreground hover:text-foreground transition-colors">
-                Resources
-              </Link>
+              {isAuthenticated && (
+                <>
+                  <Link to="/map" className="text-muted-foreground hover:text-foreground transition-colors">
+                    Safety Map
+                  </Link>
+                  <Link to="/forum" className="text-muted-foreground hover:text-foreground transition-colors">
+                    Community
+                  </Link>
+                  <Link to="/profile" className="text-muted-foreground hover:text-foreground transition-colors">
+                    Resources
+                  </Link>
+                </>
+              )}
             </nav>
             
             <div>
@@ -93,21 +107,12 @@ const Index = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4">
-              {isAuthenticated ? (
-                <Link
-                  to="/map"
-                  className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
-                >
-                  Open Safety Map
-                </Link>
-              ) : (
-                <Button
-                  onClick={handleRegisterClick}
-                  className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
-                >
-                  Create Your Profile
-                </Button>
-              )}
+              <Button
+                onClick={handleGetStartedClick}
+                className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
+              >
+                Get Started Now
+              </Button>
               
               <button
                 onClick={scrollToFeatures}
@@ -160,10 +165,17 @@ const Index = () => {
               <p className="text-muted-foreground">
                 Navigate with confidence using maps that show well-lit paths, safe zones, and areas to avoid based on real-time data.
               </p>
-              <Link to="/map" className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
-                <span>Open Safety Map</span>
-                <ArrowRight className="ml-1 w-4 h-4" />
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/map" className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Open Safety Map</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </Link>
+              ) : (
+                <button onClick={handleRegisterClick} className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Sign Up to Access</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </button>
+              )}
             </div>
             
             {/* Feature 2 */}
@@ -175,10 +187,17 @@ const Index = () => {
               <p className="text-muted-foreground">
                 One-tap emergency alert system that shares your location with trusted contacts and local authorities when needed.
               </p>
-              <button className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
-                <span>Learn How It Works</span>
-                <ArrowRight className="ml-1 w-4 h-4" />
-              </button>
+              {isAuthenticated ? (
+                <button className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Learn How It Works</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </button>
+              ) : (
+                <button onClick={handleRegisterClick} className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Sign Up to Access</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </button>
+              )}
             </div>
             
             {/* Feature 3 */}
@@ -190,10 +209,17 @@ const Index = () => {
               <p className="text-muted-foreground">
                 Share and access community insights about neighborhoods, streets, and venues from other women.
               </p>
-              <Link to="/forum" className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
-                <span>Join the Conversation</span>
-                <ArrowRight className="ml-1 w-4 h-4" />
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/forum" className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Join the Conversation</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </Link>
+              ) : (
+                <button onClick={handleRegisterClick} className="inline-flex items-center mt-4 text-primary font-medium hover:underline">
+                  <span>Sign Up to Access</span>
+                  <ArrowRight className="ml-1 w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -221,7 +247,7 @@ const Index = () => {
                 className="inline-flex items-center px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
               >
                 <User className="mr-2 w-5 h-5" />
-                <span>Create Your Profile</span>
+                <span>Sign Up Today</span>
               </Button>
             )}
           </div>
@@ -251,6 +277,7 @@ const Index = () => {
       <AuthModal 
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
+        initialMode={authMode}
       />
     </div>
   );
