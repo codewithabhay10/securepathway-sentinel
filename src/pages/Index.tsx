@@ -1,18 +1,78 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Shield, ArrowRight, Map, MessageSquare, Bell, User, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import AuthModal from '@/components/AuthModal';
+import { useAuth } from '@/components/AuthProvider';
 
 const Index = () => {
   const featuresRef = useRef<HTMLDivElement>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const { isAuthenticated, userName } = useAuth();
   
   const scrollToFeatures = () => {
     featuresRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
   
+  const handleLoginClick = () => {
+    setAuthMode('login');
+    setShowAuthModal(true);
+  };
+  
+  const handleRegisterClick = () => {
+    setAuthMode('register');
+    setShowAuthModal(true);
+  };
+  
   return (
     <div className="min-h-screen">
+      {/* Navigation Bar */}
+      <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
+        <div className="container max-w-7xl mx-auto px-4">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-2">
+              <Shield className="w-6 h-6 text-safety-600" />
+              <span className="font-medium text-lg">SecurePathway</span>
+            </div>
+            
+            <nav className="hidden md:flex items-center space-x-6">
+              <Link to="/map" className="text-muted-foreground hover:text-foreground transition-colors">
+                Safety Map
+              </Link>
+              <Link to="/forum" className="text-muted-foreground hover:text-foreground transition-colors">
+                Community
+              </Link>
+              <Link to="/profile" className="text-muted-foreground hover:text-foreground transition-colors">
+                Resources
+              </Link>
+            </nav>
+            
+            <div>
+              {isAuthenticated ? (
+                <Link to="/profile" className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                    {userName?.charAt(0) || 'U'}
+                  </div>
+                  <span className="hidden md:inline">{userName || 'Profile'}</span>
+                </Link>
+              ) : (
+                <div className="space-x-2">
+                  <Button variant="outline" size="sm" onClick={handleLoginClick}>
+                    Sign In
+                  </Button>
+                  <Button size="sm" onClick={handleRegisterClick}>
+                    Sign Up
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+      
       {/* Hero Section */}
       <section className="relative pt-24 pb-32 px-4 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-safety-100 to-background -z-10" />
@@ -33,12 +93,21 @@ const Index = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link
-                to="/map"
-                className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
-              >
-                Open Safety Map
-              </Link>
+              {isAuthenticated ? (
+                <Link
+                  to="/map"
+                  className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
+                >
+                  Open Safety Map
+                </Link>
+              ) : (
+                <Button
+                  onClick={handleRegisterClick}
+                  className="px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
+                >
+                  Create Your Profile
+                </Button>
+              )}
               
               <button
                 onClick={scrollToFeatures}
@@ -138,13 +207,23 @@ const Index = () => {
             <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
               Connect with a community dedicated to creating safer environments for women everywhere. Your insights help make our cities safer.
             </p>
-            <Link
-              to="/profile"
-              className="inline-flex items-center px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
-            >
-              <User className="mr-2 w-5 h-5" />
-              <span>Create Your Profile</span>
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                to="/forum"
+                className="inline-flex items-center px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
+              >
+                <MessageSquare className="mr-2 w-5 h-5" />
+                <span>Join the Community</span>
+              </Link>
+            ) : (
+              <Button
+                onClick={handleRegisterClick}
+                className="inline-flex items-center px-8 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-soft hover:shadow-medium transition-all"
+              >
+                <User className="mr-2 w-5 h-5" />
+                <span>Create Your Profile</span>
+              </Button>
+            )}
           </div>
         </div>
       </section>
@@ -167,6 +246,12 @@ const Index = () => {
           </div>
         </div>
       </footer>
+      
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
     </div>
   );
 };
