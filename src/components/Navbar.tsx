@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { MapPin, MessageSquare, User, Shield, Menu, X, LogIn } from 'lucide-react';
+import { MapPin, MessageSquare, User, Shield, Menu, X, LogIn, Scan } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthProvider';
 import AuthModal from '@/components/AuthModal';
@@ -27,6 +27,7 @@ const Navbar = () => {
   const navItems = [
     { name: 'Map', icon: <MapPin size={20} />, path: '/map' },
     { name: 'Forum', icon: <MessageSquare size={20} />, path: '/forum' },
+    { name: 'Deepfake', icon: <Scan size={20} />, path: '/deepfake' },
     { name: 'Profile', icon: <User size={20} />, path: '/profile' },
   ];
   

@@ -2,10 +2,9 @@
 import React, { useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { cn } from '@/lib/utils';
-import { User, Settings, Bell, Shield, LogOut, ChevronRight, Scan } from 'lucide-react';
+import { User, Settings, Bell, Shield, LogOut, ChevronRight } from 'lucide-react';
 import SOSButton from '@/components/SOSButton';
 import { useAuth } from '@/components/AuthProvider';
-import { useNavigate } from 'react-router-dom';
 
 interface TrustedContact {
   id: number;
@@ -22,11 +21,6 @@ const DEMO_CONTACTS: TrustedContact[] = [
 const Profile = () => {
   const [contacts, setContacts] = useState<TrustedContact[]>(DEMO_CONTACTS);
   const { logout } = useAuth();
-  const navigate = useNavigate();
-  
-  const handleDeepfakeDetection = () => {
-    navigate('/deepfake');
-  };
   
   return (
     <div className="min-h-screen bg-background">
@@ -92,14 +86,6 @@ const Profile = () => {
                 <button className="w-full p-4 flex items-center text-left hover:bg-muted/50 transition-colors">
                   <Settings className="w-5 h-5 mr-3 text-muted-foreground" />
                   <span>Account Settings</span>
-                </button>
-                
-                <button
-                  className="w-full p-4 flex items-center text-left hover:bg-muted/50 transition-colors"
-                  onClick={handleDeepfakeDetection}
-                >
-                  <Scan className="w-5 h-5 mr-3 text-muted-foreground" />
-                  <span>Deepfake Detection</span>
                 </button>
                 
                 <button className="w-full p-4 flex items-center text-left hover:bg-muted/50 transition-colors">
