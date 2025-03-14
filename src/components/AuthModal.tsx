@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, User, Lock, UserPlus, LogIn, Mail, UserCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/components/AuthProvider';
+import { useNavigate } from 'react-router-dom';
 
 type AuthMode = 'login' | 'register';
 
@@ -24,6 +26,8 @@ const AuthModal = ({ isOpen, onClose, initialMode = 'login', onSuccess }: AuthMo
   const [isLoading, setIsLoading] = useState(false);
   
   const { toast } = useToast();
+  const { login } = useAuth();
+  const navigate = useNavigate();
   
   if (!isOpen) return null;
   
@@ -46,9 +50,11 @@ const AuthModal = ({ isOpen, onClose, initialMode = 'login', onSuccess }: AuthMo
       // This is a mock authentication - in a real app, this would connect to a backend
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      localStorage.setItem('isAuthenticated', 'true');
+      // Use AuthProvider's login function instead of directly manipulating localStorage
       if (mode === 'register') {
-        localStorage.setItem('userName', name);
+        login(name);
+      } else {
+        login();
       }
       
       toast({
@@ -61,6 +67,10 @@ const AuthModal = ({ isOpen, onClose, initialMode = 'login', onSuccess }: AuthMo
       }
       
       onClose();
+      
+      // Redirect to map page upon successful login
+      navigate('/map');
+      
     } catch (error) {
       toast({
         title: "Authentication failed",
