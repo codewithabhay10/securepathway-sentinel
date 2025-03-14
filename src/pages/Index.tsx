@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, ArrowRight, Map, MessageSquare, Bell, User, ChevronDown } from 'lucide-react';
+import { Shield, ArrowRight, Map, MessageSquare, Bell, User, ChevronDown, Scan } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import AuthModal from '@/components/AuthModal';
@@ -56,6 +56,9 @@ const Index = () => {
                   </Link>
                   <Link to="/forum" className="text-muted-foreground hover:text-foreground transition-colors">
                     Community
+                  </Link>
+                  <Link to="/deepfake" className="text-muted-foreground hover:text-foreground transition-colors">
+                    Deepfake Detection
                   </Link>
                   <Link to="/profile" className="text-muted-foreground hover:text-foreground transition-colors">
                     Resources
