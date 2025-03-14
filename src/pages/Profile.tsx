@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar';
 import { cn } from '@/lib/utils';
 import { User, Settings, Bell, Shield, LogOut, ChevronRight } from 'lucide-react';
 import SOSButton from '@/components/SOSButton';
+import { useAuth } from '@/components/AuthProvider';
 
 interface TrustedContact {
   id: number;
@@ -19,6 +20,7 @@ const DEMO_CONTACTS: TrustedContact[] = [
 
 const Profile = () => {
   const [contacts, setContacts] = useState<TrustedContact[]>(DEMO_CONTACTS);
+  const { logout } = useAuth();
   
   return (
     <div className="min-h-screen bg-background">
@@ -91,7 +93,10 @@ const Profile = () => {
                   <span>Privacy & Security</span>
                 </button>
                 
-                <button className="w-full p-4 flex items-center text-left text-destructive hover:bg-destructive/5 transition-colors">
+                <button 
+                  className="w-full p-4 flex items-center text-left text-destructive hover:bg-destructive/5 transition-colors"
+                  onClick={logout}
+                >
                   <LogOut className="w-5 h-5 mr-3" />
                   <span>Sign Out</span>
                 </button>
