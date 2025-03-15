@@ -12,8 +12,10 @@ interface SOSButtonProps {
 }
 
 interface EmergencyContact {
+  id: number;
   name: string;
   phone: string;
+  relationship: string;
 }
 
 interface LocationData {
@@ -23,10 +25,13 @@ interface LocationData {
   synced: boolean;
 }
 
-// Demo emergency contacts - in a real app, these would be stored in a database or local storage
-const EMERGENCY_CONTACTS: EmergencyContact[] = [
-  { name: "Police", phone: "911" }, // Example emergency number
-  { name: "John Doe", phone: "+1234567890" }, // Example contact
+// Key for emergency contacts in localStorage
+const EMERGENCY_CONTACTS_KEY = 'emergency_contacts';
+
+// Fallback emergency contacts in case none are found in localStorage
+const FALLBACK_EMERGENCY_CONTACTS: EmergencyContact[] = [
+  { id: 1, name: "Police", phone: "911", relationship: "Emergency Services" },
+  { id: 2, name: "Emergency Contact", phone: "+1234567890", relationship: "Default" },
 ];
 
 const LOCAL_STORAGE_KEY = 'offline_location_data';
@@ -51,6 +56,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   const [offlineLocationData, setOfflineLocationData] = useState<LocationData[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   
   // WebRTC state
   const [isCallActive, setIsCallActive] = useState(false);
@@ -63,6 +69,25 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
 
   const { toast } = useToast();
   const recognizerRef = useRef<speechCommands.SpeechCommandRecognizer | null>(null);
+  
+  // Load emergency contacts from localStorage
+  useEffect(() => {
+    try {
+      const savedContacts = localStorage.getItem(EMERGENCY_CONTACTS_KEY);
+      if (savedContacts) {
+        const parsedContacts = JSON.parse(savedContacts) as EmergencyContact[];
+        if (Array.isArray(parsedContacts) && parsedContacts.length > 0) {
+          setEmergencyContacts(parsedContacts);
+          return;
+        }
+      }
+      // Use fallback contacts if none found in localStorage
+      setEmergencyContacts(FALLBACK_EMERGENCY_CONTACTS);
+    } catch (error) {
+      console.error('Error loading emergency contacts:', error);
+      setEmergencyContacts(FALLBACK_EMERGENCY_CONTACTS);
+    }
+  }, []);
   
   // Function to handle SOS button click
   const handleSOSClick = useCallback(() => {
@@ -318,7 +343,8 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     // Alert method based on connectivity
     let successCount = 0;
     
-    for (const contact of EMERGENCY_CONTACTS) {
+    // Use the emergency contacts from state (loaded from localStorage)
+    for (const contact of emergencyContacts) {
       if (isOnline) {
         // Try WebRTC call first when online
         const webrtcSuccess = await makeWebRTCCall(contact, locationStr);
@@ -353,7 +379,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         });
       }
     }
-  }, [location, isOnline, isCallActive, storeOfflineLocation, makeWebRTCCall, sendSMS, toast]);
+  }, [location, isOnline, isCallActive, emergencyContacts, storeOfflineLocation, makeWebRTCCall, sendSMS, toast]);
   
   // Sync offline data when back online
   const syncOfflineData = useCallback(async () => {
@@ -374,7 +400,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         const fullLocationStr = `${locationStr} (${googleMapsUrl})`;
         
         // Try to send alerts for the stored location
-        for (const contact of EMERGENCY_CONTACTS) {
+        for (const contact of emergencyContacts) {
           // Use SMS for stored offline data (WebRTC needs a live location)
           const success = await sendSMS(contact, fullLocationStr);
           if (success) syncedCount++;
@@ -406,7 +432,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         variant: "default",
       });
     }
-  }, [offlineLocationData, sendSMS, toast]);
+  }, [offlineLocationData, emergencyContacts, sendSMS, toast]);
   
   // Load offline location data on mount
   useEffect(() => {
@@ -466,7 +492,11 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     return () => {
       // Clean up
       if (recognizerRef.current) {
-        recognizerRef.current.stopListening();
+        try {
+          recognizerRef.current.stopListening();
+        } catch (error) {
+          console.error('Error stopping voice recognition:', error);
+        }
       }
     };
   }, [toast]);
@@ -478,7 +508,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       
       try {
         await recognizerRef.current.listen(
-          async (result) => {
+          result => {
             // Get the top prediction
             const scores = result.scores as Float32Array;
             let maxScore = Number.MIN_VALUE;
@@ -747,7 +777,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
             Emergency Contacts
           </h3>
           <ul className="text-xs space-y-2">
-            {EMERGENCY_CONTACTS.map((contact, idx) => (
+            {emergencyContacts.map((contact, idx) => (
               <li key={idx} className="flex justify-between">
                 <span>{contact.name}</span>
                 <span className="text-muted-foreground">{contact.phone}</span>
