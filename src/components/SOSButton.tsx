@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, Phone, X, UserRound, WifiOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle, Phone, X, UserRound, WifiOff, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -14,11 +14,20 @@ interface EmergencyContact {
   phone: string;
 }
 
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  timestamp: number;
+  synced: boolean;
+}
+
 // Demo emergency contacts - in a real app, these would be stored in a database or local storage
 const EMERGENCY_CONTACTS: EmergencyContact[] = [
   { name: "Police", phone: "911" }, // Example emergency number
   { name: "John Doe", phone: "+1234567890" }, // Example contact
 ];
+
+const LOCAL_STORAGE_KEY = 'offline_location_data';
 
 const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -26,12 +35,32 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   const [countdown, setCountdown] = useState(5);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [offlineLocationData, setOfflineLocationData] = useState<LocationData[]>([]);
   const { toast } = useToast();
+  
+  // Load any saved offline location data on mount
+  useEffect(() => {
+    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedData) {
+      try {
+        const parsedData = JSON.parse(savedData) as LocationData[];
+        setOfflineLocationData(parsedData);
+      } catch (e) {
+        console.error('Error parsing stored location data:', e);
+      }
+    }
+  }, []);
   
   // Monitor online status
   useEffect(() => {
     const handleOnlineStatus = () => {
-      setIsOnline(navigator.onLine);
+      const nextOnlineState = navigator.onLine;
+      setIsOnline(nextOnlineState);
+      
+      // When coming back online, try to sync stored location data
+      if (nextOnlineState && offlineLocationData.length > 0) {
+        syncOfflineData();
+      }
     };
 
     window.addEventListener('online', handleOnlineStatus);
@@ -41,17 +70,30 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       window.removeEventListener('online', handleOnlineStatus);
       window.removeEventListener('offline', handleOnlineStatus);
     };
-  }, []);
+  }, [offlineLocationData]);
 
   // Get current location
   useEffect(() => {
     if (isActivated) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setLocation({
+          const newLocation = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude
-          });
+          };
+          
+          setLocation(newLocation);
+          
+          // If offline, store the location data for later syncing
+          if (!navigator.onLine) {
+            const locationData: LocationData = {
+              ...newLocation,
+              timestamp: Date.now(),
+              synced: false
+            };
+            
+            storeOfflineLocation(locationData);
+          }
         },
         (error) => {
           console.error('Error getting location:', error);
@@ -64,6 +106,82 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       );
     }
   }, [isActivated, toast]);
+  
+  // Function to store offline location
+  const storeOfflineLocation = (locationData: LocationData) => {
+    const updatedData = [...offlineLocationData, locationData];
+    setOfflineLocationData(updatedData);
+    
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
+      toast({
+        title: "Location Stored Offline",
+        description: "Your location will be shared when you're back online",
+        variant: "default",
+      });
+    } catch (e) {
+      console.error('Error storing location data:', e);
+    }
+  };
+  
+  // Function to sync offline data when online
+  const syncOfflineData = useCallback(async () => {
+    if (!navigator.onLine || offlineLocationData.length === 0) return;
+    
+    const unsyncedData = offlineLocationData.filter(data => !data.synced);
+    if (unsyncedData.length === 0) return;
+    
+    let syncedCount = 0;
+    const updatedData = [...offlineLocationData];
+    
+    // Process each unsynced location
+    for (const data of unsyncedData) {
+      try {
+        // Send emergency alerts with stored location data
+        const locationStr = `${data.latitude},${data.longitude}`;
+        const googleMapsUrl = `https://maps.google.com/maps?q=${data.latitude},${data.longitude}`;
+        const fullLocationStr = `${locationStr} (${googleMapsUrl})`;
+        
+        // Try to send alerts for the stored location
+        for (const contact of EMERGENCY_CONTACTS) {
+          const success = await makeVoIPCall(contact, fullLocationStr);
+          if (success) syncedCount++;
+        }
+        
+        // Mark this data as synced
+        const index = updatedData.findIndex(
+          item => item.timestamp === data.timestamp && 
+                 item.latitude === data.latitude && 
+                 item.longitude === data.longitude
+        );
+        
+        if (index !== -1) {
+          updatedData[index] = { ...updatedData[index], synced: true };
+        }
+      } catch (err) {
+        console.error('Error syncing location data:', err);
+      }
+    }
+    
+    // Update storage with synced status
+    setOfflineLocationData(updatedData);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
+    
+    if (syncedCount > 0) {
+      toast({
+        title: "Location Data Synced",
+        description: `Sent ${syncedCount} delayed emergency alert(s) with your stored location`,
+        variant: "default",
+      });
+    }
+  }, [offlineLocationData, toast]);
+  
+  useEffect(() => {
+    // Try to sync when component mounts if we're online
+    if (navigator.onLine && offlineLocationData.some(data => !data.synced)) {
+      syncOfflineData();
+    }
+  }, [syncOfflineData]);
   
   const handleSOSClick = () => {
     if (isActivated) return;
@@ -162,6 +280,25 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       locationStr = `${locationStr} (${googleMapsUrl})`;
     }
     
+    // If offline, store location for later and notify user
+    if (!navigator.onLine) {
+      if (location) {
+        const locationData: LocationData = {
+          ...location,
+          timestamp: Date.now(),
+          synced: false
+        };
+        storeOfflineLocation(locationData);
+      }
+      
+      toast({
+        title: "Device Offline",
+        description: "Your location has been saved and will be shared when you're back online",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     // Alert method based on connectivity
     let successCount = 0;
     
@@ -254,7 +391,15 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         )}
       </div>
       
-      {/* Emergency contacts display (would be implemented in a real app) */}
+      {/* Show offline status badge if there's unsynced data */}
+      {offlineLocationData.some(data => !data.synced) && (
+        <div className="absolute bottom-20 right-0 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs flex items-center gap-1 shadow-md">
+          <WifiOff size={12} />
+          <span>{offlineLocationData.filter(d => !d.synced).length} pending alert(s)</span>
+        </div>
+      )}
+      
+      {/* Emergency contacts display */}
       {isExpanded && !isActivated && (
         <div className="absolute bottom-20 right-0 bg-white p-4 rounded-lg shadow-lg w-72">
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
