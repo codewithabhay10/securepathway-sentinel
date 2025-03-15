@@ -1,9 +1,11 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Phone, X, UserRound, WifiOff, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AlertCircle, Phone, X, UserRound, WifiOff, CheckCircle, Mic, MicOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
+import * as speechCommands from '@tensorflow-models/speech-commands';
+import * as tf from '@tensorflow/tfjs';
 
 interface SOSButtonProps {
   className?: string;
@@ -36,7 +38,11 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [offlineLocationData, setOfflineLocationData] = useState<LocationData[]>([]);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const { toast } = useToast();
+  
+  const recognizerRef = useRef<speechCommands.SpeechCommandRecognizer | null>(null);
   
   // Load any saved offline location data on mount
   useEffect(() => {
@@ -50,6 +56,122 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       }
     }
   }, []);
+  
+  // Set up speech recognition
+  useEffect(() => {
+    let recognizer: speechCommands.SpeechCommandRecognizer;
+    
+    const loadModel = async () => {
+      try {
+        // Create the recognizer
+        recognizer = speechCommands.create(
+          'BROWSER_FFT',
+          undefined,
+          undefined,
+          undefined
+        );
+        
+        // Load the model
+        await recognizer.ensureModelLoaded();
+        recognizerRef.current = recognizer;
+        
+        // Toast when model is loaded
+        toast({
+          title: "Voice Detection Ready",
+          description: "Say 'help' to trigger SOS",
+          variant: "default",
+        });
+        
+        console.log('Speech commands model loaded');
+      } catch (error) {
+        console.error('Error loading speech commands model:', error);
+        toast({
+          title: "Voice Detection Error",
+          description: "Could not load voice recognition model",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    loadModel();
+    
+    return () => {
+      // Clean up
+      if (recognizerRef.current) {
+        recognizerRef.current.stopListening();
+      }
+    };
+  }, [toast]);
+  
+  // Listen for voice commands when enabled
+  useEffect(() => {
+    const startListening = async () => {
+      if (!recognizerRef.current || !voiceEnabled) return;
+      
+      try {
+        await recognizerRef.current.listen(
+          result => {
+            // Get the top prediction
+            const scores = result.scores;
+            const maxScore = Math.max(...scores);
+            const maxScoreIndex = scores.indexOf(maxScore);
+            const words = recognizerRef.current?.wordLabels();
+            
+            if (words && words[maxScoreIndex] === 'help' && maxScore > 0.8) {
+              console.log('Help detected with confidence:', maxScore);
+              // Trigger SOS if the word is 'help' with high confidence
+              handleSOSClick();
+              handleActivate();
+              
+              toast({
+                title: "Voice Command Detected",
+                description: "SOS triggered by voice command",
+                variant: "destructive",
+              });
+            }
+          },
+          {
+            includeSpectrogram: false,
+            probabilityThreshold: 0.7,
+            invokeCallbackOnNoiseAndUnknown: false,
+            overlapFactor: 0.5
+          }
+        );
+        
+        setIsListening(true);
+      } catch (error) {
+        console.error('Error starting voice recognition:', error);
+        toast({
+          title: "Voice Detection Error",
+          description: "Could not start voice recognition",
+          variant: "destructive",
+        });
+        setIsListening(false);
+        setVoiceEnabled(false);
+      }
+    };
+    
+    const stopListening = async () => {
+      if (!recognizerRef.current) return;
+      
+      try {
+        await recognizerRef.current.stopListening();
+        setIsListening(false);
+      } catch (error) {
+        console.error('Error stopping voice recognition:', error);
+      }
+    };
+    
+    if (voiceEnabled) {
+      startListening();
+    } else {
+      stopListening();
+    }
+    
+    return () => {
+      stopListening();
+    };
+  }, [voiceEnabled, handleSOSClick, handleActivate, toast]);
   
   // Monitor online status
   useEffect(() => {
@@ -336,8 +458,36 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     }
   };
   
+  // Toggle voice recognition
+  const toggleVoiceRecognition = () => {
+    setVoiceEnabled(!voiceEnabled);
+    
+    toast({
+      title: voiceEnabled ? "Voice Detection Disabled" : "Voice Detection Enabled",
+      description: voiceEnabled ? "Say 'help' to trigger SOS" : "Voice commands turned off",
+      variant: "default",
+    });
+  };
+  
   return (
-    <div className={cn('fixed z-40 flex items-end justify-end', className)}>
+    <div className={cn('fixed z-40 flex flex-col items-end justify-end gap-2', className)}>
+      {/* Voice activation toggle button */}
+      <Button
+        variant="outline"
+        size="icon"
+        className={cn(
+          'rounded-full shadow-medium',
+          voiceEnabled ? 'bg-green-100 border-green-500' : 'bg-gray-100'
+        )}
+        onClick={toggleVoiceRecognition}
+      >
+        {voiceEnabled ? (
+          <Mic size={20} className="text-green-600 animate-pulse" />
+        ) : (
+          <MicOff size={20} />
+        )}
+      </Button>
+      
       <div 
         className={cn(
           'flex items-center transition-all duration-300 rounded-full shadow-medium',
@@ -417,6 +567,14 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
           <div className="mt-3 text-xs text-muted-foreground">
             These contacts will be alerted with your location
           </div>
+        </div>
+      )}
+      
+      {/* Voice recognition status badge */}
+      {voiceEnabled && (
+        <div className="absolute bottom-28 right-0 bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs flex items-center gap-1 shadow-md">
+          <Mic size={12} className={isListening ? "animate-pulse" : ""} />
+          <span>Say "help" to trigger SOS</span>
         </div>
       )}
     </div>
