@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AlertCircle, Phone, X, UserRound, WifiOff, CheckCircle, Mic, MicOff } from 'lucide-react';
+import { AlertCircle, Phone, X, UserRound, WifiOff, CheckCircle, Mic, MicOff, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,17 @@ const EMERGENCY_CONTACTS: EmergencyContact[] = [
 const LOCAL_STORAGE_KEY = 'offline_location_data';
 
 const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
+  // Initialize TensorFlow backend
+  useEffect(() => {
+    // Set the backend to webgl or cpu to avoid the "No backend found in registry" error
+    tf.setBackend('webgl').catch(() => {
+      tf.setBackend('cpu').catch(err => {
+        console.error("Failed to set TensorFlow backend:", err);
+      });
+    });
+  }, []);
+
+  // Core state variables
   const [isExpanded, setIsExpanded] = useState(false);
   const [isActivated, setIsActivated] = useState(false);
   const [countdown, setCountdown] = useState(5);
@@ -40,16 +51,26 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   const [offlineLocationData, setOfflineLocationData] = useState<LocationData[]>([]);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const { toast } = useToast();
   
+  // WebRTC state
+  const [isCallActive, setIsCallActive] = useState(false);
+  const [currentCallContact, setCurrentCallContact] = useState<EmergencyContact | null>(null);
+
+  // WebRTC refs
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+
+  const { toast } = useToast();
   const recognizerRef = useRef<speechCommands.SpeechCommandRecognizer | null>(null);
   
-  // Define core functions first to avoid the "used before declaration" error
+  // Function to handle SOS button click
   const handleSOSClick = useCallback(() => {
     if (isActivated) return;
     setIsExpanded(true);
   }, [isActivated]);
   
+  // Function to activate SOS countdown
   const handleActivate = useCallback(() => {
     if (isActivated) return;
     
@@ -67,12 +88,18 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     }, 1000);
   }, [isActivated]);
   
+  // Function to cancel SOS
   const handleCancel = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setIsExpanded(false);
     setIsActivated(false);
     setCountdown(5);
-  }, []);
+    
+    // Close any active WebRTC call
+    if (isCallActive) {
+      endWebRTCCall();
+    }
+  }, [isCallActive]);
   
   // Function to store offline location
   const storeOfflineLocation = useCallback((locationData: LocationData) => {
@@ -91,50 +118,159 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     }
   }, [offlineLocationData, toast]);
   
-  const makeVoIPCall = useCallback(async (contact: EmergencyContact, locationStr: string) => {
+  // Initialize WebRTC connection
+  const initializeWebRTC = useCallback(async () => {
     try {
-      console.log(`Making VoIP call to ${contact.name} at ${contact.phone}`);
-      console.log(`Sharing location: ${locationStr}`);
+      // Create local media stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      localStreamRef.current = stream;
       
-      // In a real implementation, we would make an API call to Twilio here
-      // Example of how the call might be structured:
-      // const response = await fetch('/api/make-call', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ 
-      //     to: contact.phone,
-      //     message: `Emergency alert from SecurePathway. Location: ${locationStr}`
-      //   })
-      // });
+      // Create RTCPeerConnection
+      const configuration: RTCConfiguration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ]
+      };
       
-      toast({
-        title: `Calling ${contact.name}`,
-        description: "Emergency VoIP call initiated",
-        variant: "destructive",
+      const peerConnection = new RTCPeerConnection(configuration);
+      peerConnectionRef.current = peerConnection;
+      
+      // Add local stream tracks to peer connection
+      stream.getTracks().forEach(track => {
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.addTrack(track, stream);
+        }
       });
+      
+      // Create data channel for location sharing
+      const dataChannel = peerConnection.createDataChannel('emergency-data');
+      dataChannelRef.current = dataChannel;
+      
+      dataChannel.onopen = () => {
+        console.log('Data channel opened');
+        
+        // Share location data
+        if (location) {
+          const locationString = `${location.latitude},${location.longitude}`;
+          const googleMapsUrl = `https://maps.google.com/maps?q=${location.latitude},${location.longitude}`;
+          
+          dataChannel.send(JSON.stringify({
+            type: 'location',
+            data: {
+              coordinates: locationString,
+              url: googleMapsUrl,
+              timestamp: Date.now()
+            }
+          }));
+        }
+      };
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          // In a real app, we would send this to a signaling server
+          console.log('ICE candidate:', event.candidate);
+        }
+      };
+      
+      // Log connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        
+        if (peerConnection.connectionState === 'disconnected' || 
+            peerConnection.connectionState === 'failed' || 
+            peerConnection.connectionState === 'closed') {
+          endWebRTCCall();
+        }
+      };
       
       return true;
     } catch (error) {
-      console.error('VoIP call failed:', error);
+      console.error('Error setting up WebRTC:', error);
+      toast({
+        title: "Communication Error",
+        description: "Could not initialize emergency call. Please try again.",
+        variant: "destructive",
+      });
       return false;
     }
-  }, [toast]);
+  }, [location, toast]);
   
+  // Function to make a WebRTC emergency call
+  const makeWebRTCCall = useCallback(async (contact: EmergencyContact, locationStr: string) => {
+    try {
+      // In a real app, we would connect to a signaling server to establish the connection
+      setCurrentCallContact(contact);
+      
+      const initialized = await initializeWebRTC();
+      if (!initialized || !peerConnectionRef.current) {
+        return false;
+      }
+      
+      // Create and set local description
+      const offerOptions = {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      };
+      
+      const offer = await peerConnectionRef.current.createOffer(offerOptions);
+      await peerConnectionRef.current.setLocalDescription(offer);
+      
+      // In a real application, you would send this offer to your contact via a signaling server
+      console.log(`WebRTC call initiated to ${contact.name} at ${contact.phone}`);
+      console.log(`Sharing location: ${locationStr}`);
+      
+      // Simulate connection (in a real app, we would wait for answer from remote peer)
+      setTimeout(() => {
+        setIsCallActive(true);
+        
+        toast({
+          title: `Connected to ${contact.name}`,
+          description: "Emergency call active. Location has been shared.",
+          variant: "destructive",
+        });
+      }, 1500);
+      
+      return true;
+    } catch (error) {
+      console.error('WebRTC call failed:', error);
+      setCurrentCallContact(null);
+      return false;
+    }
+  }, [initializeWebRTC, toast]);
+  
+  // Function to end a WebRTC call
+  const endWebRTCCall = useCallback(() => {
+    // Close data channel
+    if (dataChannelRef.current) {
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+    
+    // Close peer connection
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    
+    // Stop all tracks in local stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    
+    setIsCallActive(false);
+    setCurrentCallContact(null);
+  }, []);
+  
+  // Fallback to SMS if WebRTC fails
   const sendSMS = useCallback(async (contact: EmergencyContact, locationStr: string) => {
     try {
       console.log(`Sending SMS to ${contact.name} at ${contact.phone}`);
       console.log(`SMS Content: Emergency alert! My location: ${locationStr}`);
       
-      // In a real implementation, we would make an API call to Twilio SMS here
-      // Example of how it might be structured:
-      // const response = await fetch('/api/send-sms', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ 
-      //     to: contact.phone,
-      //     message: `Emergency alert! My location: ${locationStr}`
-      //   })
-      // });
+      // In a real implementation, we would make an API call to an SMS service
       
       toast({
         title: `SMS sent to ${contact.name}`,
@@ -149,6 +285,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     }
   }, [toast]);
   
+  // Function to trigger SOS actions
   const triggerSOS = useCallback(async () => {
     // Get current location
     let locationStr = "Unknown location";
@@ -183,12 +320,13 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     
     for (const contact of EMERGENCY_CONTACTS) {
       if (isOnline) {
-        // Try VoIP call first when online
-        const voipSuccess = await makeVoIPCall(contact, locationStr);
-        if (voipSuccess) {
+        // Try WebRTC call first when online
+        const webrtcSuccess = await makeWebRTCCall(contact, locationStr);
+        if (webrtcSuccess) {
           successCount++;
+          break; // Only need one successful WebRTC call
         } else {
-          // Fallback to SMS if VoIP fails
+          // Fallback to SMS if WebRTC fails
           const smsSuccess = await sendSMS(contact, locationStr);
           if (smsSuccess) successCount++;
         }
@@ -199,36 +337,25 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       }
     }
     
-    // Display overall status
-    if (successCount > 0) {
-      toast({
-        title: "Emergency Alert Sent",
-        description: `Alerts sent to ${successCount} contacts with your location`,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Alert Failed",
-        description: "Could not send emergency alerts. Please try again or call emergency services directly.",
-        variant: "destructive",
-      });
-    }
-  }, [location, isOnline, storeOfflineLocation, makeVoIPCall, sendSMS, toast]);
-  
-  // Load any saved offline location data on mount
-  useEffect(() => {
-    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedData) {
-      try {
-        const parsedData = JSON.parse(savedData) as LocationData[];
-        setOfflineLocationData(parsedData);
-      } catch (e) {
-        console.error('Error parsing stored location data:', e);
+    // Display overall status if no WebRTC call is active
+    if (!isCallActive) {
+      if (successCount > 0) {
+        toast({
+          title: "Emergency Alert Sent",
+          description: `Alerts sent to ${successCount} contacts with your location`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Alert Failed",
+          description: "Could not send emergency alerts. Please try again or call emergency services directly.",
+          variant: "destructive",
+        });
       }
     }
-  }, []);
+  }, [location, isOnline, isCallActive, storeOfflineLocation, makeWebRTCCall, sendSMS, toast]);
   
-  // Function to sync offline data when online
+  // Sync offline data when back online
   const syncOfflineData = useCallback(async () => {
     if (!navigator.onLine || offlineLocationData.length === 0) return;
     
@@ -248,7 +375,8 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         
         // Try to send alerts for the stored location
         for (const contact of EMERGENCY_CONTACTS) {
-          const success = await makeVoIPCall(contact, fullLocationStr);
+          // Use SMS for stored offline data (WebRTC needs a live location)
+          const success = await sendSMS(contact, fullLocationStr);
           if (success) syncedCount++;
         }
         
@@ -278,7 +406,20 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         variant: "default",
       });
     }
-  }, [offlineLocationData, makeVoIPCall, toast]);
+  }, [offlineLocationData, sendSMS, toast]);
+  
+  // Load offline location data on mount
+  useEffect(() => {
+    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedData) {
+      try {
+        const parsedData = JSON.parse(savedData) as LocationData[];
+        setOfflineLocationData(parsedData);
+      } catch (e) {
+        console.error('Error parsing stored location data:', e);
+      }
+    }
+  }, []);
   
   // Set up speech recognition
   useEffect(() => {
@@ -286,6 +427,10 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     
     const loadModel = async () => {
       try {
+        // Ensure TensorFlow backend is set
+        await tf.ready();
+        console.log('TensorFlow backend ready:', tf.getBackend());
+        
         // Create the recognizer
         recognizer = speechCommands.create(
           'BROWSER_FFT',
@@ -332,12 +477,10 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       if (!recognizerRef.current || !voiceEnabled) return;
       
       try {
-        // Fixed type issue by providing a proper callback function
         await recognizerRef.current.listen(
           async (result) => {
             // Get the top prediction
             const scores = result.scores as Float32Array;
-            // Find the maximum score in the Float32Array
             let maxScore = Number.MIN_VALUE;
             let maxScoreIndex = -1;
             
@@ -363,7 +506,6 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
               });
             }
             
-            // Return a promise to match the expected RecognizerCallback type
             return Promise.resolve();
           },
           {
@@ -465,6 +607,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     }
   }, [isActivated, storeOfflineLocation, toast]);
   
+  // Sync offline data when online
   useEffect(() => {
     // Try to sync when component mounts if we're online
     if (navigator.onLine && offlineLocationData.some(data => !data.synced)) {
@@ -485,6 +628,39 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   
   return (
     <div className={cn('fixed z-40 flex flex-col items-end justify-end gap-2', className)}>
+      {/* Active call overlay */}
+      {isCallActive && currentCallContact && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex flex-col items-center justify-center">
+          <div className="bg-card p-6 rounded-lg max-w-md w-full mx-4 shadow-xl">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="bg-green-100 p-4 rounded-full">
+                <Phone size={36} className="text-green-600 animate-pulse" />
+              </div>
+              <h2 className="text-xl font-semibold">Emergency Call Active</h2>
+              <p className="text-muted-foreground text-center">
+                Connected to {currentCallContact.name}
+                <br />
+                {currentCallContact.phone}
+              </p>
+              {location && (
+                <div className="text-sm text-center mt-2 text-muted-foreground">
+                  Your location has been shared:
+                  <br />
+                  {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                </div>
+              )}
+              <Button 
+                variant="destructive" 
+                className="mt-6"
+                onClick={endWebRTCCall}
+              >
+                End Emergency Call
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    
       {/* Voice activation toggle button */}
       <Button
         variant="outline"
