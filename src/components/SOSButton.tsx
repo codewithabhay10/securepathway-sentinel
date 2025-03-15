@@ -44,273 +44,13 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
   
   const recognizerRef = useRef<speechCommands.SpeechCommandRecognizer | null>(null);
   
-  // Load any saved offline location data on mount
-  useEffect(() => {
-    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedData) {
-      try {
-        const parsedData = JSON.parse(savedData) as LocationData[];
-        setOfflineLocationData(parsedData);
-      } catch (e) {
-        console.error('Error parsing stored location data:', e);
-      }
-    }
-  }, []);
-  
-  // Set up speech recognition
-  useEffect(() => {
-    let recognizer: speechCommands.SpeechCommandRecognizer;
-    
-    const loadModel = async () => {
-      try {
-        // Create the recognizer
-        recognizer = speechCommands.create(
-          'BROWSER_FFT',
-          undefined,
-          undefined,
-          undefined
-        );
-        
-        // Load the model
-        await recognizer.ensureModelLoaded();
-        recognizerRef.current = recognizer;
-        
-        // Toast when model is loaded
-        toast({
-          title: "Voice Detection Ready",
-          description: "Say 'help' to trigger SOS",
-          variant: "default",
-        });
-        
-        console.log('Speech commands model loaded');
-      } catch (error) {
-        console.error('Error loading speech commands model:', error);
-        toast({
-          title: "Voice Detection Error",
-          description: "Could not load voice recognition model",
-          variant: "destructive",
-        });
-      }
-    };
-    
-    loadModel();
-    
-    return () => {
-      // Clean up
-      if (recognizerRef.current) {
-        recognizerRef.current.stopListening();
-      }
-    };
-  }, [toast]);
-  
-  // Listen for voice commands when enabled
-  useEffect(() => {
-    const startListening = async () => {
-      if (!recognizerRef.current || !voiceEnabled) return;
-      
-      try {
-        await recognizerRef.current.listen(
-          result => {
-            // Get the top prediction
-            const scores = result.scores;
-            const maxScore = Math.max(...scores);
-            const maxScoreIndex = scores.indexOf(maxScore);
-            const words = recognizerRef.current?.wordLabels();
-            
-            if (words && words[maxScoreIndex] === 'help' && maxScore > 0.8) {
-              console.log('Help detected with confidence:', maxScore);
-              // Trigger SOS if the word is 'help' with high confidence
-              handleSOSClick();
-              handleActivate();
-              
-              toast({
-                title: "Voice Command Detected",
-                description: "SOS triggered by voice command",
-                variant: "destructive",
-              });
-            }
-          },
-          {
-            includeSpectrogram: false,
-            probabilityThreshold: 0.7,
-            invokeCallbackOnNoiseAndUnknown: false,
-            overlapFactor: 0.5
-          }
-        );
-        
-        setIsListening(true);
-      } catch (error) {
-        console.error('Error starting voice recognition:', error);
-        toast({
-          title: "Voice Detection Error",
-          description: "Could not start voice recognition",
-          variant: "destructive",
-        });
-        setIsListening(false);
-        setVoiceEnabled(false);
-      }
-    };
-    
-    const stopListening = async () => {
-      if (!recognizerRef.current) return;
-      
-      try {
-        await recognizerRef.current.stopListening();
-        setIsListening(false);
-      } catch (error) {
-        console.error('Error stopping voice recognition:', error);
-      }
-    };
-    
-    if (voiceEnabled) {
-      startListening();
-    } else {
-      stopListening();
-    }
-    
-    return () => {
-      stopListening();
-    };
-  }, [voiceEnabled, handleSOSClick, handleActivate, toast]);
-  
-  // Monitor online status
-  useEffect(() => {
-    const handleOnlineStatus = () => {
-      const nextOnlineState = navigator.onLine;
-      setIsOnline(nextOnlineState);
-      
-      // When coming back online, try to sync stored location data
-      if (nextOnlineState && offlineLocationData.length > 0) {
-        syncOfflineData();
-      }
-    };
-
-    window.addEventListener('online', handleOnlineStatus);
-    window.addEventListener('offline', handleOnlineStatus);
-
-    return () => {
-      window.removeEventListener('online', handleOnlineStatus);
-      window.removeEventListener('offline', handleOnlineStatus);
-    };
-  }, [offlineLocationData]);
-
-  // Get current location
-  useEffect(() => {
-    if (isActivated) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const newLocation = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          };
-          
-          setLocation(newLocation);
-          
-          // If offline, store the location data for later syncing
-          if (!navigator.onLine) {
-            const locationData: LocationData = {
-              ...newLocation,
-              timestamp: Date.now(),
-              synced: false
-            };
-            
-            storeOfflineLocation(locationData);
-          }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          toast({
-            title: "Location Error",
-            description: "Could not get your precise location",
-            variant: "destructive",
-          });
-        }
-      );
-    }
-  }, [isActivated, toast]);
-  
-  // Function to store offline location
-  const storeOfflineLocation = (locationData: LocationData) => {
-    const updatedData = [...offlineLocationData, locationData];
-    setOfflineLocationData(updatedData);
-    
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
-      toast({
-        title: "Location Stored Offline",
-        description: "Your location will be shared when you're back online",
-        variant: "default",
-      });
-    } catch (e) {
-      console.error('Error storing location data:', e);
-    }
-  };
-  
-  // Function to sync offline data when online
-  const syncOfflineData = useCallback(async () => {
-    if (!navigator.onLine || offlineLocationData.length === 0) return;
-    
-    const unsyncedData = offlineLocationData.filter(data => !data.synced);
-    if (unsyncedData.length === 0) return;
-    
-    let syncedCount = 0;
-    const updatedData = [...offlineLocationData];
-    
-    // Process each unsynced location
-    for (const data of unsyncedData) {
-      try {
-        // Send emergency alerts with stored location data
-        const locationStr = `${data.latitude},${data.longitude}`;
-        const googleMapsUrl = `https://maps.google.com/maps?q=${data.latitude},${data.longitude}`;
-        const fullLocationStr = `${locationStr} (${googleMapsUrl})`;
-        
-        // Try to send alerts for the stored location
-        for (const contact of EMERGENCY_CONTACTS) {
-          const success = await makeVoIPCall(contact, fullLocationStr);
-          if (success) syncedCount++;
-        }
-        
-        // Mark this data as synced
-        const index = updatedData.findIndex(
-          item => item.timestamp === data.timestamp && 
-                 item.latitude === data.latitude && 
-                 item.longitude === data.longitude
-        );
-        
-        if (index !== -1) {
-          updatedData[index] = { ...updatedData[index], synced: true };
-        }
-      } catch (err) {
-        console.error('Error syncing location data:', err);
-      }
-    }
-    
-    // Update storage with synced status
-    setOfflineLocationData(updatedData);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
-    
-    if (syncedCount > 0) {
-      toast({
-        title: "Location Data Synced",
-        description: `Sent ${syncedCount} delayed emergency alert(s) with your stored location`,
-        variant: "default",
-      });
-    }
-  }, [offlineLocationData, toast]);
-  
-  useEffect(() => {
-    // Try to sync when component mounts if we're online
-    if (navigator.onLine && offlineLocationData.some(data => !data.synced)) {
-      syncOfflineData();
-    }
-  }, [syncOfflineData]);
-  
-  const handleSOSClick = () => {
+  // Define core functions first to avoid the "used before declaration" error
+  const handleSOSClick = useCallback(() => {
     if (isActivated) return;
     setIsExpanded(true);
-  };
+  }, [isActivated]);
   
-  const handleActivate = () => {
+  const handleActivate = useCallback(() => {
     if (isActivated) return;
     
     setIsActivated(true);
@@ -325,16 +65,33 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         triggerSOS();
       }
     }, 1000);
-  };
+  }, [isActivated]);
   
-  const handleCancel = (e: React.MouseEvent) => {
+  const handleCancel = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setIsExpanded(false);
     setIsActivated(false);
     setCountdown(5);
-  };
+  }, []);
   
-  const makeVoIPCall = async (contact: EmergencyContact, locationStr: string) => {
+  // Function to store offline location
+  const storeOfflineLocation = useCallback((locationData: LocationData) => {
+    const updatedData = [...offlineLocationData, locationData];
+    setOfflineLocationData(updatedData);
+    
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
+      toast({
+        title: "Location Stored Offline",
+        description: "Your location will be shared when you're back online",
+        variant: "default",
+      });
+    } catch (e) {
+      console.error('Error storing location data:', e);
+    }
+  }, [offlineLocationData, toast]);
+  
+  const makeVoIPCall = useCallback(async (contact: EmergencyContact, locationStr: string) => {
     try {
       console.log(`Making VoIP call to ${contact.name} at ${contact.phone}`);
       console.log(`Sharing location: ${locationStr}`);
@@ -361,9 +118,9 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       console.error('VoIP call failed:', error);
       return false;
     }
-  };
+  }, [toast]);
   
-  const sendSMS = async (contact: EmergencyContact, locationStr: string) => {
+  const sendSMS = useCallback(async (contact: EmergencyContact, locationStr: string) => {
     try {
       console.log(`Sending SMS to ${contact.name} at ${contact.phone}`);
       console.log(`SMS Content: Emergency alert! My location: ${locationStr}`);
@@ -390,9 +147,9 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
       console.error('SMS failed:', error);
       return false;
     }
-  };
+  }, [toast]);
   
-  const triggerSOS = async () => {
+  const triggerSOS = useCallback(async () => {
     // Get current location
     let locationStr = "Unknown location";
     
@@ -456,7 +213,264 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
         variant: "destructive",
       });
     }
-  };
+  }, [location, isOnline, storeOfflineLocation, makeVoIPCall, sendSMS, toast]);
+  
+  // Load any saved offline location data on mount
+  useEffect(() => {
+    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedData) {
+      try {
+        const parsedData = JSON.parse(savedData) as LocationData[];
+        setOfflineLocationData(parsedData);
+      } catch (e) {
+        console.error('Error parsing stored location data:', e);
+      }
+    }
+  }, []);
+  
+  // Function to sync offline data when online
+  const syncOfflineData = useCallback(async () => {
+    if (!navigator.onLine || offlineLocationData.length === 0) return;
+    
+    const unsyncedData = offlineLocationData.filter(data => !data.synced);
+    if (unsyncedData.length === 0) return;
+    
+    let syncedCount = 0;
+    const updatedData = [...offlineLocationData];
+    
+    // Process each unsynced location
+    for (const data of unsyncedData) {
+      try {
+        // Send emergency alerts with stored location data
+        const locationStr = `${data.latitude},${data.longitude}`;
+        const googleMapsUrl = `https://maps.google.com/maps?q=${data.latitude},${data.longitude}`;
+        const fullLocationStr = `${locationStr} (${googleMapsUrl})`;
+        
+        // Try to send alerts for the stored location
+        for (const contact of EMERGENCY_CONTACTS) {
+          const success = await makeVoIPCall(contact, fullLocationStr);
+          if (success) syncedCount++;
+        }
+        
+        // Mark this data as synced
+        const index = updatedData.findIndex(
+          item => item.timestamp === data.timestamp && 
+                 item.latitude === data.latitude && 
+                 item.longitude === data.longitude
+        );
+        
+        if (index !== -1) {
+          updatedData[index] = { ...updatedData[index], synced: true };
+        }
+      } catch (err) {
+        console.error('Error syncing location data:', err);
+      }
+    }
+    
+    // Update storage with synced status
+    setOfflineLocationData(updatedData);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedData));
+    
+    if (syncedCount > 0) {
+      toast({
+        title: "Location Data Synced",
+        description: `Sent ${syncedCount} delayed emergency alert(s) with your stored location`,
+        variant: "default",
+      });
+    }
+  }, [offlineLocationData, makeVoIPCall, toast]);
+  
+  // Set up speech recognition
+  useEffect(() => {
+    let recognizer: speechCommands.SpeechCommandRecognizer;
+    
+    const loadModel = async () => {
+      try {
+        // Create the recognizer
+        recognizer = speechCommands.create(
+          'BROWSER_FFT',
+          undefined,
+          undefined,
+          undefined
+        );
+        
+        // Load the model
+        await recognizer.ensureModelLoaded();
+        recognizerRef.current = recognizer;
+        
+        // Toast when model is loaded
+        toast({
+          title: "Voice Detection Ready",
+          description: "Say 'help' to trigger SOS",
+          variant: "default",
+        });
+        
+        console.log('Speech commands model loaded');
+      } catch (error) {
+        console.error('Error loading speech commands model:', error);
+        toast({
+          title: "Voice Detection Error",
+          description: "Could not load voice recognition model",
+          variant: "destructive",
+        });
+      }
+    };
+    
+    loadModel();
+    
+    return () => {
+      // Clean up
+      if (recognizerRef.current) {
+        recognizerRef.current.stopListening();
+      }
+    };
+  }, [toast]);
+  
+  // Listen for voice commands when enabled
+  useEffect(() => {
+    const startListening = async () => {
+      if (!recognizerRef.current || !voiceEnabled) return;
+      
+      try {
+        // Fixed type issue by providing a proper callback function
+        await recognizerRef.current.listen(
+          async (result) => {
+            // Get the top prediction
+            const scores = result.scores as Float32Array;
+            // Find the maximum score in the Float32Array
+            let maxScore = Number.MIN_VALUE;
+            let maxScoreIndex = -1;
+            
+            for (let i = 0; i < scores.length; i++) {
+              if (scores[i] > maxScore) {
+                maxScore = scores[i];
+                maxScoreIndex = i;
+              }
+            }
+            
+            const words = recognizerRef.current?.wordLabels();
+            
+            if (words && maxScoreIndex >= 0 && words[maxScoreIndex] === 'help' && maxScore > 0.8) {
+              console.log('Help detected with confidence:', maxScore);
+              // Trigger SOS if the word is 'help' with high confidence
+              handleSOSClick();
+              handleActivate();
+              
+              toast({
+                title: "Voice Command Detected",
+                description: "SOS triggered by voice command",
+                variant: "destructive",
+              });
+            }
+            
+            // Return a promise to match the expected RecognizerCallback type
+            return Promise.resolve();
+          },
+          {
+            includeSpectrogram: false,
+            probabilityThreshold: 0.7,
+            invokeCallbackOnNoiseAndUnknown: false,
+            overlapFactor: 0.5
+          }
+        );
+        
+        setIsListening(true);
+      } catch (error) {
+        console.error('Error starting voice recognition:', error);
+        toast({
+          title: "Voice Detection Error",
+          description: "Could not start voice recognition",
+          variant: "destructive",
+        });
+        setIsListening(false);
+        setVoiceEnabled(false);
+      }
+    };
+    
+    const stopListening = async () => {
+      if (!recognizerRef.current) return;
+      
+      try {
+        await recognizerRef.current.stopListening();
+        setIsListening(false);
+      } catch (error) {
+        console.error('Error stopping voice recognition:', error);
+      }
+    };
+    
+    if (voiceEnabled) {
+      startListening();
+    } else {
+      stopListening();
+    }
+    
+    return () => {
+      stopListening();
+    };
+  }, [voiceEnabled, handleSOSClick, handleActivate, toast]);
+  
+  // Monitor online status
+  useEffect(() => {
+    const handleOnlineStatus = () => {
+      const nextOnlineState = navigator.onLine;
+      setIsOnline(nextOnlineState);
+      
+      // When coming back online, try to sync stored location data
+      if (nextOnlineState && offlineLocationData.length > 0) {
+        syncOfflineData();
+      }
+    };
+
+    window.addEventListener('online', handleOnlineStatus);
+    window.addEventListener('offline', handleOnlineStatus);
+
+    return () => {
+      window.removeEventListener('online', handleOnlineStatus);
+      window.removeEventListener('offline', handleOnlineStatus);
+    };
+  }, [offlineLocationData, syncOfflineData]);
+
+  // Get current location
+  useEffect(() => {
+    if (isActivated) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+          
+          setLocation(newLocation);
+          
+          // If offline, store the location data for later syncing
+          if (!navigator.onLine) {
+            const locationData: LocationData = {
+              ...newLocation,
+              timestamp: Date.now(),
+              synced: false
+            };
+            
+            storeOfflineLocation(locationData);
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          toast({
+            title: "Location Error",
+            description: "Could not get your precise location",
+            variant: "destructive",
+          });
+        }
+      );
+    }
+  }, [isActivated, storeOfflineLocation, toast]);
+  
+  useEffect(() => {
+    // Try to sync when component mounts if we're online
+    if (navigator.onLine && offlineLocationData.some(data => !data.synced)) {
+      syncOfflineData();
+    }
+  }, [syncOfflineData, offlineLocationData]);
   
   // Toggle voice recognition
   const toggleVoiceRecognition = () => {
@@ -464,7 +478,7 @@ const SOSButton: React.FC<SOSButtonProps> = ({ className }) => {
     
     toast({
       title: voiceEnabled ? "Voice Detection Disabled" : "Voice Detection Enabled",
-      description: voiceEnabled ? "Say 'help' to trigger SOS" : "Voice commands turned off",
+      description: voiceEnabled ? "Voice commands turned off" : "Say 'help' to trigger SOS",
       variant: "default",
     });
   };
