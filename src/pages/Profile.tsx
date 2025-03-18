@@ -105,10 +105,15 @@ const Profile = () => {
 
   const onSubmit = (data: ContactFormValues) => {
     if (editingContact) {
-      // Update existing contact
+      // Update existing contact - using the spread operator to ensure all fields are set
       const updatedContacts = contacts.map(contact => 
         contact.id === editingContact.id 
-          ? { ...contact, ...data } 
+          ? { 
+              id: editingContact.id,
+              name: data.name,
+              phone: data.phone,
+              relationship: data.relationship
+            } 
           : contact
       );
       setContacts(updatedContacts);
@@ -118,10 +123,12 @@ const Profile = () => {
         description: "Your emergency contact has been updated successfully.",
       });
     } else {
-      // Add new contact
-      const newContact = {
-        id: Date.now(), // Simple unique ID
-        ...data
+      // Add new contact - ensure all fields are explicitly assigned
+      const newContact: TrustedContact = {
+        id: Date.now(),
+        name: data.name,
+        phone: data.phone,
+        relationship: data.relationship
       };
       setContacts([...contacts, newContact]);
       
